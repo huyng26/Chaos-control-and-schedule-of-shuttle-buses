@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shuttle Bus Model Simulator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>Shuttle Bus Model Simulator</h1>
+        <p>Nagatani nonlinear map · two buses · free overtaking</p>
+      </div>
+      <div class="formula">
+        T<sub>i</sub>(m+1) = T<sub>i</sub>(m) + ΓH<sub>i</sub>(m)
+        + 1/(1 + S<sub>i</sub>H<sub>i</sub>(m))
+      </div>
+    </header>
+
+    <aside class="controls">
+      <section>
+        <h2>Parameters</h2>
+        <label class="control">
+          <span>Loading Γ <output id="gamma-output">0.200</output></span>
+          <input id="gamma" type="range" min="0" max="2" step="0.001" value="0.2">
+        </label>
+        <label class="control">
+          <span>Bus 1 speedup S₁ <output id="s1-output">0.50</output></span>
+          <input id="s1" type="range" min="0" max="2" step="0.01" value="0.5">
+        </label>
+        <label class="control">
+          <span>Bus 2 speedup S₂ <output id="s2-output">0.20</output></span>
+          <input id="s2" type="range" min="0" max="2" step="0.01" value="0.2">
+        </label>
+        <label class="control">
+          <span>Animation speed <output id="speed-output">1.0×</output></span>
+          <input id="animation-speed" type="range" min="0.25" max="4" step="0.25" value="1">
+        </label>
+      </section>
+
+      <section>
+        <h2>Paper cases</h2>
+        <div class="preset-grid">
+          <button data-gamma="0.10" data-s1="0.20" data-s2="0.20">Regular</button>
+          <button class="active" data-gamma="0.20" data-s1="0.50" data-s2="0.20">Period 11</button>
+          <button data-gamma="0.30" data-s1="0.50" data-s2="0.20">Chaos</button>
+          <button data-gamma="0.80" data-s1="0.50" data-s2="0.20">Complex</button>
+        </div>
+      </section>
+
+      <section class="playback">
+        <h2>Playback</h2>
+        <div class="button-row">
+          <button id="play-pause" class="primary">Pause</button>
+          <button id="step">Step</button>
+          <button id="reset">Reset</button>
+        </div>
+        <label class="control">
+          <span>Trip position <output id="trip-output">0</output></span>
+          <input id="trip-scrubber" type="range" min="0" max="1999" step="1" value="0">
+        </label>
+      </section>
+
+      <section class="live-values">
+        <h2>Current state</h2>
+        <dl>
+          <div><dt>Regime</dt><dd id="regime">Period 11</dd></div>
+          <div><dt>Dimensionless time</dt><dd id="model-time">0.000</dd></div>
+          <div><dt>Waiting passengers</dt><dd id="waiting-count">0.00</dd></div>
+          <div><dt>Last headway</dt><dd id="last-headway">0.000</dd></div>
+          <div><dt>Bus 1 trip</dt><dd id="bus1-trip">0</dd></div>
+          <div><dt>Bus 2 trip</dt><dd id="bus2-trip">0</dd></div>
+        </dl>
+      </section>
+
+      <section class="legend">
+        <h2>Visual encoding</h2>
+        <p><i class="bus1-color"></i> Bus 1</p>
+        <p><i class="bus2-color"></i> Bus 2</p>
+        <p><i class="passenger-color"></i> Waiting passengers</p>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <section class="simulation-panel panel">
+        <div class="panel-title">
+          <div>
+            <h2>Route animation</h2>
+            <p>Buses load at the origin, travel to the destination, unload, and return.</p>
+          </div>
+          <span id="event-label" class="event-label">Initializing</span>
+        </div>
+
+        <div id="route" class="route">
+          <div class="route-line outbound"></div>
+          <div class="route-line inbound"></div>
+          <div class="station origin">
+            <span class="station-marker">O</span>
+            <strong>Origin</strong>
+            <small>board</small>
+          </div>
+          <div class="station destination">
+            <span class="station-marker">D</span>
+            <strong>Destination</strong>
+            <small>leave</small>
+          </div>
+          <div id="passengers" class="passengers" aria-label="Waiting passengers"></div>
+          <div id="bus-1" class="bus bus-1"><b>1</b><span></span></div>
+          <div id="bus-2" class="bus bus-2"><b>2</b><span></span></div>
+          <div class="direction go">go →</div>
+          <div class="direction back">← return</div>
+        </div>
+
+        <div class="equation-strip">
+          <div>
+            <span>Headway</span>
+            <strong>H<sub>i</sub> = T<sub>i</sub> − T<sub>previous</sub></strong>
+          </div>
+          <div>
+            <span>Loading delay</span>
+            <strong>ΓH<sub>i</sub></strong>
+          </div>
+          <div>
+            <span>Travel time</span>
+            <strong>1/(1 + S<sub>i</sub>H<sub>i</sub>)</strong>
+          </div>
+          <div>
+            <span>Next tour</span>
+            <strong id="next-tour-value">—</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="plots">
+        <article class="panel chart-panel">
+          <div class="panel-title">
+            <div><h2>Headway history</h2><p>Recent H₁(m) and H₂(m)</p></div>
+          </div>
+          <canvas id="headway-chart"></canvas>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-title">
+            <div><h2>Return map</h2><p>H₁(m+1) against H₁(m)</p></div>
+          </div>
+          <canvas id="return-map"></canvas>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-title">
+            <div><h2>Tour time</h2><p>ΔT₁(m) and ΔT₂(m)</p></div>
+          </div>
+          <canvas id="tour-chart"></canvas>
+        </article>
+        <article class="panel chart-panel">
+          <div class="panel-title">
+            <div><h2>Late-time statistics</h2><p>Mean and RMS over trips 1000–2000</p></div>
+          </div>
+          <div class="stats-table">
+            <div></div><b>Mean</b><b>RMS</b>
+            <span>H₁</span><strong id="h1-mean">—</strong><strong id="h1-rms">—</strong>
+            <span>H₂</span><strong id="h2-mean">—</strong><strong id="h2-rms">—</strong>
+            <span>ΔT₁</span><strong id="t1-mean">—</strong><strong id="t1-rms">—</strong>
+            <span>ΔT₂</span><strong id="t2-mean">—</strong><strong id="t2-rms">—</strong>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
